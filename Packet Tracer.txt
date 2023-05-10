@@ -1,0 +1,180 @@
+from scapy.all import *
+import time
+import pandas as pd
+import PySimpleGUI as sg
+import tkinter as tk
+from tkinter import ttk
+import numpy as np
+import string
+import random
+import sys
+import signal
+
+# Define the capture filter and output file
+capture_filter = "tcp or udp"
+output_file = "captured_packets.csv"
+
+
+
+# Define a dictionary to map protocol numbers to protocol names
+protocol_names = {
+    1: "ICMP",
+    6: "TCP",
+    17: "UDP",
+    20: "FTP",
+    22: "SSH",
+    25: "SMTP",
+    80: "HTTP",
+    443: "HTTPS",
+    754: "pump",
+    8443: "HTTPS-alt",
+    8450: "npmp",
+    8500: "fmtp",
+    8883: "MQTT",
+    9000: "CSlistener",
+    9001: "CSlistenerSecure",
+    1883: "MQTT-alt"
+}
+
+# Define a function to handle captured packets
+def handle_packet(packet):
+        if IP in packet:
+            src_ip = packet[IP].src
+            dst_ip = packet[IP].dst
+            protocol_num = packet[IP].proto
+            
+            # Get the protocol name from the protocol_names dictionary
+            protocol_name = protocol_names.get(protocol_num, "Unknown")
+
+            # Check if the packet has a TCP or UDP layer, and get the port numbers if so
+            if TCP in packet:
+                src_port = packet[TCP].sport
+                dst_port = packet[TCP].dport
+            elif UDP in packet:
+                src_port = packet[UDP].sport
+                dst_port = packet[UDP].dport
+            else:
+                src_port = "N/A"
+                dst_port = "N/A"
+            
+            packet_size = len(packet)
+
+            # Append packet information to output file
+            with open(output_file, "a") as f:
+                f.write(f"{int(time.time())},{src_ip},{dst_ip},{protocol_name},{src_port},{dst_port},{packet_size}\n")
+
+
+
+# Define the columns for the packet data
+columns = [
+    {"name": "Timestamp", "width": 20},
+    {"name": "Source IP", "width": 15},
+    {"name": "Destination IP", "width": 15},
+    {"name": "Protocol", "width": 15},
+    {"name": "Source Port", "width": 15},
+    {"name": "Destination Port", "width": 15},
+    {"name": "Packet Size", "width": 15},
+]
+
+
+# Experimentation area 
+
+
+
+
+class TimeoutException(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise TimeoutException("Packet capture timed out")
+
+# Prompt the user for a timeout value
+timeout = int(input("Enter Scan Duration (in seconds): "))
+
+# Register a signal handler for SIGINT (Ctrl+C)
+signal.signal(signal.SIGINT, lambda signum, frame: sys.exit(0))
+
+# Register a signal handler for SIGALRM (timeout)
+signal.signal(signal.SIGALRM, timeout_handler)
+signal.alarm(timeout)
+
+try:
+    # Initialize an empty DataFrame to hold the captured packets
+    packet_data = pd.DataFrame(columns=[c["name"] for c in columns])
+
+    packets = sniff(filter=capture_filter, prn=handle_packet)
+
+    # Load the captured packet data into the DataFrame
+    packet_data = pd.read_csv(output_file, header=None, names=[c["name"] for c in columns])
+
+except TimeoutException:
+    print("Packet capture timed out")
+
+
+
+# # Initialize an empty DataFrame to hold the captured packets
+# packet_data = pd.DataFrame(columns=[c["name"] for c in columns])
+
+
+# packets = sniff(filter=capture_filter, prn=handle_packet)
+
+# # Load the captured packet data into the DataFrame
+# packet_data = pd.read_csv(output_file, header=None, names=[c["name"] for c in columns])
+
+
+
+# Define the columns for the table
+columns = [
+    {"name": "Timestamp", "width": 200},
+    {"name": "Source IP", "width": 150},
+    {"name": "Destination IP", "width": 150},
+    {"name": "Protocol", "width": 150},
+    {"name": "Source Port", "width": 150},
+    {"name": "Destination Port", "width": 150},
+    {"name": "Packet Size", "width": 150},
+]
+
+def gui():
+        
+    # Read the CSV file into a pandas dataframe
+    df = pd.read_csv(output_file)
+
+    # Create the GUI window
+    root = tk.Tk()
+    root.title("Netscan")
+
+
+    # Create the table
+    table = ttk.Treeview(root, columns=[c["name"] for c in columns], show="headings",height=100)
+    for c in columns:
+        table.heading(c["name"], text=c["name"])
+        table.column(c["name"], width=c["width"])
+
+    # Add the data to the table
+    for i, row in df.iterrows():
+        table.insert("", "end", values=list(row))
+
+    # Add sorting functionality to the table
+    for col in columns:
+        table.heading(col["name"], command=lambda c=col["name"]: sortby(table, c, 0))
+
+    def sortby(tv, col, descending):
+        """Sort table contents when a column header is clicked."""
+        data = [(tv.set(child, col), child) for child in tv.get_children("")]
+        data.sort(reverse=descending)
+        for i, item in enumerate(data):
+            tv.move(item[1], "", i)
+        tv.heading(col, command=lambda: sortby(tv, col, not descending))
+
+    # Pack the table and run the GUI
+    print(f"Data has been stored as {output_file}")
+    table.pack()
+
+
+    root.mainloop()
+
+try:
+ gui()
+except:
+ pass
+output_file = None
